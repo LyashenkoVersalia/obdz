@@ -1,8 +1,8 @@
 # Лабораторна робота №1. Моделювання предметної області та створення схеми бази даних
 
-Виконавець: прізвище та імʼя, група.
+Виконавець: Ляшенко Версалія, СТСА-25-1.
 
-Предметна область: назва.
+Предметна область: інформаційна система інтернет-магазину нішевої парфумерії та пробників.
 
 <!--
 Шаблон звіту. Скопіювати як lab-01/README.md і заповнити всі розділи.
@@ -12,7 +12,7 @@
 
 ## 1. Предметна область
 
-<!-- 3-5 речень: що це за бізнес, які події відбуваються в часі, які рішення в ньому ухвалюють. -->
+Інтернет-магазин продає нішеву парфумерію у вигляді готових флаконів, мініатюр і пробників без розпиву. Каталог містить бренди, аромати та їхні товарні варіанти з визначеними об’ємом, форматом і поточною ціною. Покупці оформлюють замовлення, позиції яких містять кількість товару та ціну одиниці на момент замовлення. Для замовлень зберігаються поточний стан, відомості про оплату й доставку. Система призначена для ведення каталогу, оформлення замовлень і контролю їх оплати та відправлення.
 
 ## 2. Бізнес-правила
 
@@ -394,53 +394,163 @@ erDiagram
 
 Стовпець products.price зберігає поточну ціну товару, а order_items.unit_price — ціну одиниці товару на момент замовлення.
 
-Типи PostgreSQL у діаграмі зазначено без параметрів. Точність числових стовпців та інші обмеження буде визначено в SQL-міграції.
+Типи PostgreSQL у діаграмі зазначено без параметрів. Точність числових стовпців та інші обмеження визначено в SQL-міграції.
 
 
 ## 7. Середовище
 
-Операційна система: Windows / macOS / Linux.
+Операційна система: Windows.
 
-```bash
+СУБД: PostgreSQL 18.6 у контейнері Docker. Файл compose.yaml розташовано в корені репозиторію. Для збереження даних використано іменований том pgdata.
+
+Команди запуску, виконані в PowerShell із кореня репозиторію:
+
+```powershell
 docker compose up -d
 docker compose ps
 ```
 
-```text
-вивід docker compose ps
+Підключення через DBeaver 26.2.2: сервер localhost, порт 5433, база dbsa, користувач student. Порт 5433 на комп’ютері перенаправлено на порт 5432 контейнера.
+
+Для перевірки збереження даних після повторного створення контейнера виконано:
+
+```powershell
+docker compose down
+docker compose up -d
+docker compose ps
 ```
 
-Підключення pgAdmin: сервер localhost, порт 5432, база dbsa, користувач student.
+Команда down видалила контейнер dbsa-postgres-1 і мережу dbsa_default. Після up -d мережу створено заново, контейнер запущено.
 
-Перевірка тому: команди `docker compose down` і `docker compose up -d`, стан таблиць після перезапуску.
+Фактичний вивід docker compose ps:
+
+```text
+NAME                 IMAGE            COMMAND                  SERVICE    CREATED
+  STATUS         PORTS
+dbsa-postgres-1       postgres:18.6    "docker-entrypoint.s…"   postgres   7 seconds ago
+  Up 6 seconds   0.0.0.0:5433->5432/tcp, [::]:5433->5432/tcp
+```
+
+Після відновлення підключення в DBeaver повторно виконано незмінений скрипт check-schema.sql для бази dbsa. Отримано 55 рядків без попереджень «УВАГА». Результат збігається з результатом до повторного створення контейнера: збережено вісім таблиць, їхні стовпці та обмеження.
+
+Перевірка підтвердила збереження схеми в томі після docker compose down і повторного запуску. Параметр -v не використовувався.
 
 ## 8. Створення схеми
 
-- Міграція 001: [migrations/001_create_schema.up.sql](migrations/001_create_schema.up.sql), [migrations/001_create_schema.down.sql](migrations/001_create_schema.down.sql)
-- Рішення, яких не видно з діаграми: умови CHECK, реакції на видалення, стовпці ідентичності.
+Міграція 001 складається з двох файлів:
+
+- [001_create_schema.up.sql](migrations/001_create_schema.up.sql) — створення восьми таблиць із ключами та обмеженнями.
+- [001_create_schema.down.sql](migrations/001_create_schema.down.sql) — видалення таблиць у зворотному порядку.
+
+У файлі up спочатку створюються таблиці, на які посилаються інші: brands, fragrances, products, customers, orders. Після них створюються order_items, payments і shipments. У файлі down використано зворотний порядок.
+
+Рішення, яких не видно повністю з діаграми:
+
+1. Сурогатні первинні ключі реалізовано як bigint GENERATED ALWAYS AS IDENTITY. PostgreSQL автоматично надає ідентифікатори. У таблиці order_items використано складений первинний ключ (order_id, product_id) без окремого штучного ідентифікатора.
+
+2. Усі зовнішні ключі є обов’язковими: для них установлено NOT NULL. Обмеження UNIQUE для payments.order_id і shipments.order_id забезпечують не більше однієї оплати та однієї доставки для замовлення. Назва бренду також має NOT NULL і UNIQUE.
+
+3. Установлено чотири обмеження CHECK: products.volume_ml > 0, products.price > 0, order_items.quantity > 0, order_items.unit_price > 0. Разом із NOT NULL вони вимагають наявності додатних значень.
+
+4. Для order_items.order_id обрано ON DELETE CASCADE: при дозволеному видаленні замовлення його позиції видаляються разом із ним. Для решти шести зовнішніх ключів обрано ON DELETE RESTRICT відповідно до розділу 4. Наявність оплати або доставки забороняє видалення замовлення.
+
+5. Ціни й сума оплати мають тип numeric(12, 2), обсяг товару — numeric(8, 2), кількість — integer. Тип numeric забезпечує точне зберігання десяткових значень у заданому масштабі.
+
+6. Дати й час мають тип timestamptz. Дата оформлення замовлення обов’язкова. Поля paid_at і shipped_at допускають NULL, оскільки оплата або відправлення можуть ще не відбутися.
+
+7. Опис аромату, електронна пошта та телефон покупця допускають NULL. Унікальність електронної пошти й телефону бізнес-правилами не встановлено, тому обмеження UNIQUE для них не додано.
+
+8. Правило 13 про підтверджену оплату перед відправленням віднесено до програмного рівня. Програма має перевіряти стан оплати в іншій таблиці; звичайний CHECK у таблиці доставки такого контролю не забезпечує.
+
+Файл up виконано в базі dbsa через DBeaver: виконано вісім команд CREATE TABLE. Результат незміненого скрипта check-schema.sql містить 55 рядків без попереджень «УВАГА». Склад таблиць, стовпців, типів і ключів звірено з діаграмою розділу 6.
 
 ## 9. Перевірка обмежень
 
 Файл перевірок: [constraint-checks.sql](constraint-checks.sql)
 
+Кожну перевірку виконано окремо в DBeaver для бази dbsa на порту 5433. Нижче наведено фактичні повідомлення PostgreSQL.
+
 | № | Правило | Обмеження | Повідомлення СУБД |
 |---|---|---|---|
-| 1 | ... | NOT NULL | `ERROR: null value in column ...` |
-| 2 | ... | UNIQUE | `ERROR: duplicate key value violates unique constraint ...` |
-| 3 | ... | CHECK | `ERROR: new row for relation ... violates check constraint ...` |
-| 4 | ... | REFERENCES | `ERROR: insert or update on table ... violates foreign key constraint ...` |
-| 5 | ... | PRIMARY KEY | `ERROR: duplicate key value violates unique constraint ..._pkey` |
+| 1 | Назва бренду обов’язкова; значення NULL не допускається. | NOT NULL, код 23502 | `ERROR: null value in column "name" of relation "brands" violates not-null constraint` |
+| 2 | Назви брендів не можуть повторюватися. | UNIQUE, код 23505 | `ERROR: duplicate key value violates unique constraint "brands_name_key"` |
+| 3 | Ціна товару повинна бути більшою за нуль. | CHECK, код 23514 | `ERROR: new row for relation "products" violates check constraint "products_price_check"` |
+| 4 | Аромат може посилатися лише на наявний бренд. | REFERENCES, код 23503 | `ERROR: insert or update on table "fragrances" violates foreign key constraint "fragrances_brand_id_fkey"` |
+| 5 | Ідентифікатор бренду як первинний ключ не може повторюватися. | PRIMARY KEY, код 23505 | `ERROR: duplicate key value violates unique constraint "brands_pkey"` |
+
+Усі п’ять команд відхилено з очікуваними повідомленнями. Кожна помилкова команда відхиляється повністю, тому тестові рядки не збереглися.
+
+Порушення UNIQUE та PRIMARY KEY перевірено командами INSERT із двома рядками, що мають однакове значення відповідного ключа. Для перевірки PRIMARY KEY назви брендів різні, а ідентифікатори однакові. OVERRIDING SYSTEM VALUE дозволяє явно задати ідентифікатори для цієї перевірки.
+
+У перевірці CHECK команда відхиляється через від’ємну ціну до перевірки зовнішнього ключа. Порушення REFERENCES перевірено окремою командою з коректною назвою аромату та посиланням на неіснуючий бренд.
 
 ## 10. Цикл up - down - up
 
 Результат скрипта перевірки схеми в базі dbsa_check після виконання файлів up:
 
 ```text
-вставити результат разом із заголовками стовпців
+table_name	kind	name	definition
+brands	стовпець	id	bigint NOT NULL GENERATED AS IDENTITY
+brands	стовпець	name	text NOT NULL
+brands	PRIMARY KEY	brands_pkey	PRIMARY KEY (id)
+brands	UNIQUE	brands_name_key	UNIQUE (name)
+customers	стовпець	id	bigint NOT NULL GENERATED AS IDENTITY
+customers	стовпець	last_name	text NOT NULL
+customers	стовпець	email	text
+customers	стовпець	phone	text
+customers	PRIMARY KEY	customers_pkey	PRIMARY KEY (id)
+fragrances	стовпець	id	bigint NOT NULL GENERATED AS IDENTITY
+fragrances	стовпець	brand_id	bigint NOT NULL
+fragrances	стовпець	name	text NOT NULL
+fragrances	стовпець	description	text
+fragrances	PRIMARY KEY	fragrances_pkey	PRIMARY KEY (id)
+fragrances	FOREIGN KEY	fragrances_brand_id_fkey	FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE RESTRICT
+order_items	стовпець	order_id	bigint NOT NULL
+order_items	стовпець	product_id	bigint NOT NULL
+order_items	стовпець	quantity	integer NOT NULL
+order_items	стовпець	unit_price	numeric(12,2) NOT NULL
+order_items	PRIMARY KEY	order_items_pkey	PRIMARY KEY (order_id, product_id)
+order_items	FOREIGN KEY	order_items_order_id_fkey	FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+order_items	FOREIGN KEY	order_items_product_id_fkey	FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+order_items	CHECK	order_items_quantity_check	CHECK ((quantity > 0))
+order_items	CHECK	order_items_unit_price_check	CHECK ((unit_price > (0)::numeric))
+orders	стовпець	id	bigint NOT NULL GENERATED AS IDENTITY
+orders	стовпець	customer_id	bigint NOT NULL
+orders	стовпець	ordered_at	timestamp with time zone NOT NULL
+orders	стовпець	status	text NOT NULL
+orders	PRIMARY KEY	orders_pkey	PRIMARY KEY (id)
+orders	FOREIGN KEY	orders_customer_id_fkey	FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT
+payments	стовпець	id	bigint NOT NULL GENERATED AS IDENTITY
+payments	стовпець	order_id	bigint NOT NULL
+payments	стовпець	amount	numeric(12,2) NOT NULL
+payments	стовпець	paid_at	timestamp with time zone
+payments	стовпець	status	text NOT NULL
+payments	PRIMARY KEY	payments_pkey	PRIMARY KEY (id)
+payments	UNIQUE	payments_order_id_key	UNIQUE (order_id)
+payments	FOREIGN KEY	payments_order_id_fkey	FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT
+products	стовпець	id	bigint NOT NULL GENERATED AS IDENTITY
+products	стовпець	fragrance_id	bigint NOT NULL
+products	стовпець	volume_ml	numeric(8,2) NOT NULL
+products	стовпець	format	text NOT NULL
+products	стовпець	price	numeric(12,2) NOT NULL
+products	PRIMARY KEY	products_pkey	PRIMARY KEY (id)
+products	FOREIGN KEY	products_fragrance_id_fkey	FOREIGN KEY (fragrance_id) REFERENCES fragrances(id) ON DELETE RESTRICT
+products	CHECK	products_price_check	CHECK ((price > (0)::numeric))
+products	CHECK	products_volume_ml_check	CHECK ((volume_ml > (0)::numeric))
+shipments	стовпець	id	bigint NOT NULL GENERATED AS IDENTITY
+shipments	стовпець	order_id	bigint NOT NULL
+shipments	стовпець	address	text NOT NULL
+shipments	стовпець	shipped_at	timestamp with time zone
+shipments	стовпець	status	text NOT NULL
+shipments	PRIMARY KEY	shipments_pkey	PRIMARY KEY (id)
+shipments	UNIQUE	shipments_order_id_key	UNIQUE (order_id)
+shipments	FOREIGN KEY	shipments_order_id_fkey	FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT
 ```
 
-Після виконання файлів down: результат порожній / що лишилося.
+Після виконання 001_create_schema.down.sql повторно запущено check-schema.sql у базі dbsa_check. Отримано порожній результат — 0 рядків. Таблиці, створені міграцією, видалено.
 
-Після повторного виконання файлів up: результат збігається з першим / чим відрізняється.
+Після повторного виконання 001_create_schema.up.sql успішно виконано вісім команд CREATE TABLE. Повторний запуск check-schema.sql у базі dbsa_check повернув 55 рядків без попереджень «УВАГА». Результат збігається з першим: відновлено ті самі таблиці, стовпці, типи даних, первинні й зовнішні ключі, обмеження UNIQUE та CHECK і реакції на видалення.
 
-Висновок звірки з діаграмою розділу 6: ...
+Висновок звірки з діаграмою розділу 6: створена схема відповідає реляційній діаграмі. Наявні всі вісім таблиць: brands, fragrances, products, customers, orders, order_items, payments і shipments. Назви стовпців, типи та позначені ключі узгоджені з діаграмою. Тип timestamp with time zone у результаті перевірки відповідає запису timestamptz у діаграмі. Для numeric у міграції додатково визначено точність і масштаб.
+
+Перевірка циклу up — down — up підтвердила відтворюваність схеми: після down отримано 0 рядків перевірки, після повторного up відновлено початковий результат із 55 рядків.
