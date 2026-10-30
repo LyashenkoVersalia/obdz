@@ -318,24 +318,84 @@ erDiagram
 
 ## 6. Реляційна схема
 
-<!--
-Назви таблиць і стовпців - точно як у SQL: англійською, малими літерами, через підкреслення; таблиці в множині.
-Типи PostgreSQL без параметрів (numeric, а не numeric(8, 2)). Ключі: PK, FK, «PK, FK».
--->
-
 ```mermaid
 erDiagram
-    parents ||--o{ children : ""
-    parents {
-        integer parent_id PK
-        text title
+    brands ||--o{ fragrances : "has"
+    fragrances ||--o{ products : "has"
+    customers ||--o{ orders : "places"
+    orders ||--o{ order_items : "contains"
+    products ||--o{ order_items : "appears_in"
+    orders ||--o| payments : "has"
+    orders ||--o| shipments : "has"
+
+    brands {
+        bigint id PK
+        text name UK
     }
-    children {
-        integer child_id PK
-        integer parent_id FK
+
+    fragrances {
+        bigint id PK
+        bigint brand_id FK
+        text name
+        text description
+    }
+
+    products {
+        bigint id PK
+        bigint fragrance_id FK
+        numeric volume_ml
+        text format
+        numeric price
+    }
+
+    customers {
+        bigint id PK
+        text last_name
+        text email
+        text phone
+    }
+
+    orders {
+        bigint id PK
+        bigint customer_id FK
+        timestamptz ordered_at
+        text status
+    }
+
+    order_items {
+        bigint order_id PK, FK
+        bigint product_id PK, FK
+        integer quantity
+        numeric unit_price
+    }
+
+    payments {
+        bigint id PK
+        bigint order_id FK, UK
         numeric amount
+        timestamptz paid_at
+        text status
+    }
+
+    shipments {
+        bigint id PK
+        bigint order_id FK, UK
+        text address
+        timestamptz shipped_at
+        text status
     }
 ```
+
+Назви таблиць і стовпців наведено англійською мовою, малими літерами; складені назви записано через підкреслення. Назви таблиць — у множині.
+
+У таблиці order_items первинний ключ складається з двох стовпців: order_id та product_id. Кожен із них одночасно є зовнішнім ключем.
+
+У таблицях payments і shipments стовпець order_id є обов’язковим зовнішнім ключем та має обмеження UNIQUE. Це забезпечує не більше однієї оплати та однієї доставки для замовлення.
+
+Стовпець products.price зберігає поточну ціну товару, а order_items.unit_price — ціну одиниці товару на момент замовлення.
+
+Типи PostgreSQL у діаграмі зазначено без параметрів. Точність числових стовпців та інші обмеження буде визначено в SQL-міграції.
+
 
 ## 7. Середовище
 
