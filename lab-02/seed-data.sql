@@ -23,15 +23,41 @@ VALUES
     ('пробник')
 ON CONFLICT (name) DO NOTHING;
 
--- 3. Аромати. Для частини опис не заповнено.
+-- 3. Аромати. Бренд визначається за унікальною назвою.
+-- Зв'язок не залежить від порядку додавання брендів.
+-- Для частини ароматів опис не заповнено.
 INSERT INTO fragrances (brand_id, name, description)
 VALUES
-    (1, 'Rose Mist', 'Квітковий аромат із нотами троянди'),
-    (1, 'Citrus Dawn', 'Свіжий цитрусовий аромат'),
-    (2, 'Amber Night', 'Теплий амбровий аромат'),
-    (2, 'Wood Rain', NULL),
-    (3, 'Vanilla Cloud', 'М’який ванільний аромат'),
-    (3, 'Iris Light', NULL)
+    (
+        (SELECT id FROM brands WHERE name = 'Aroma North'),
+        'Rose Mist',
+        'Квітковий аромат із нотами троянди'
+    ),
+    (
+        (SELECT id FROM brands WHERE name = 'Aroma North'),
+        'Citrus Dawn',
+        'Свіжий цитрусовий аромат'
+    ),
+    (
+        (SELECT id FROM brands WHERE name = 'Velvet Lab'),
+        'Amber Night',
+        'Теплий амбровий аромат'
+    ),
+    (
+        (SELECT id FROM brands WHERE name = 'Velvet Lab'),
+        'Wood Rain',
+        NULL
+    ),
+    (
+        (SELECT id FROM brands WHERE name = 'Serein Atelier'),
+        'Vanilla Cloud',
+        'М’який ванільний аромат'
+    ),
+    (
+        (SELECT id FROM brands WHERE name = 'Serein Atelier'),
+        'Iris Light',
+        NULL
+    )
 ON CONFLICT (brand_id, name) DO NOTHING;
 
 -- 4. Десять товарних варіантів.
