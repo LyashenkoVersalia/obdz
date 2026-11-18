@@ -1,0 +1,8 @@
+Скорочений витяг із плану виконання.
+Джерело: перевірений скриншот відповідного запуску в DBeaver.
+Наведено підтверджені рядки; решту плану не відтворено.
+
+Bitmap Heap Scan on orders
+Heap Blocks: exact=10
+Bitmap Index Scan on orders_customer_id_idx
+Execution Time: 0.101 ms
