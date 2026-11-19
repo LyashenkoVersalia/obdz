@@ -415,37 +415,148 @@ ORDER BY
 
 ## 5. Схема «зірка»
 
-Зерно таблиці фактів (одним реченням): один рядок - це ...
+Зерно таблиці фактів: один рядок — одна позиція конкретного замовлення,
+визначена парою order_id і product_id з робочої таблиці order_items.
+
+### Показники
 
 | Показник | Чому його осмислено додавати або усереднювати |
 |---|---|
-| ... | ... |
-| ... | ... |
+| quantity | кількість одиниць товару; сума за товарами та датами показує загальну кількість одиниць у позиціях замовлень |
+| line_amount | вартість позиції, quantity * unit_price; сума за товарами та датами показує загальну вартість позицій |
+
+unit_price зберігається як допоміжне значення ціни одиниці на момент замовлення.
+Його не підсумовують як загальну вартість.
+Вартість обчислюється за ціною позиції, а не за поточною ціною products.price.
+
+У факт потрапляють позиції замовлень усіх статусів, включно зі скасованими,
+як і в аналітичних запитах розділу 1.
+Тому line_amount описує вартість записаних позицій, а не отримані оплати.
+
+### Виміри
 
 | Вимір | Ключ | Чому такий ключ | Описові стовпці |
 |---|---|---|---|
-| `dim_...` | сурогатний / природний | ... | ... |
-| `dim_dates` | природний (сама дата) | ... | ... |
+| dim_products | сурогатний product_key; ключ товару джерела source_product_id має UNIQUE | окремий ключ сховища та однозначне зіставлення з товаром робочої бази для повторного завантаження | source_product_id, fragrance_name, brand_name, format_name, volume_ml |
+| dim_dates | природний date_key типу date | сама дата однозначно визначає календарний день | year_number, month_label, day_of_week, is_weekend |
 
-Стовпці таблиці подій, які не стали ні показником, ні атрибутом виміру: ...
+source_product_id — ідентифікатор товару в робочій системі.
+У сховищі він є бізнес-ключем зіставлення з джерелом,
+а product_key генерується окремо як сурогатний ключ виміру.
+
+У dim_dates передбачено рядок на кожну календарну дату
+від першої до останньої дати подій, включно з днями без позицій.
+Для початкового наповнення це 2026-03-05 — 2026-04-30, разом 57 дат.
+
+order_id і product_id залишаються у факті як складений ключ події.
+unit_price збережено без зміни як допоміжний атрибут позиції.
+Час доби з ordered_at, статус замовлення та дані покупця
+до обраної зірки не переносяться.
+
+### Діаграма
 
 ```mermaid
 erDiagram
+    dim_products ||--o{ fact_order_items : "описує товар"
+    dim_dates ||--o{ fact_order_items : "визначає день"
+
+    dim_products {
+        bigint product_key PK
+        bigint source_product_id UK
+        text fragrance_name
+        text brand_name
+        text format_name
+        numeric volume_ml
+    }
+
+    dim_dates {
+        date date_key PK
+        integer year_number
+        text month_label
+        integer day_of_week
+        boolean is_weekend
+    }
+
+    fact_order_items {
+        bigint order_id PK
+        bigint product_id PK
+        bigint product_key FK
+        date date_key FK
+        integer quantity
+        numeric unit_price
+        numeric line_amount
+    }
 ```
 
-Денормалізація виміру: який стовпець повторюється, чому це не загрожує аномаліями оновлення і чим відрізняється від робочої бази: ...
+### Денормалізація виміру
+
+У dim_products назви бренду, аромату та формату повторюються
+в описах різних товарних варіантів.
+У робочій схемі ці значення винесені в окремі таблиці,
+а у вимірі зібрані разом для простіших аналітичних запитів.
+
+Ризик неузгодженого оновлення контролюється завантаженням:
+описові значення беруться з робочої бази та узгоджено оновлюються ETL.
+Вимір не використовується як місце ручного ведення довідників.
+Саме повторення даних не усуває аномалій автоматично —
+їх контролює визначений порядок оновлення.
 
 ## 6. Міграція зірки
 
-Файли: [migrations/004_....up.sql](migrations/004_....up.sql), [migrations/004_....down.sql](migrations/004_....down.sql)
+Файли:
+[005 up](migrations/005_create_star_schema.up.sql),
+[005 down](migrations/005_create_star_schema.down.sql).
 
-Результат скрипта перевірки схеми для таблиць сховища:
+Міграцію виконано в робочій базі dbsa.
+Порядок створення: dim_products, dim_dates, fact_order_items.
+Порядок видалення зворотний: fact_order_items, dim_dates, dim_products.
 
-```text
-вставити рядки результату для dim_... , dim_dates і fact_...
-```
+Для перевірки використано копію lab-01/check-schema.sql
+з відбором трьох таблиць сховища у фінальному SELECT.
 
-Цикл up - down - up: після up ... , після down ... , після повторного up ...
+### Результат перевірки схеми
+
+Після up отримано 30 рядків:
+18 описів стовпців та 12 описів обмежень.
+Нижче результат подано згруповано.
+
+| Таблиця | Стовпці |
+|---|---|
+| dim_products | product_key bigint NOT NULL GENERATED AS IDENTITY; source_product_id bigint NOT NULL; fragrance_name text NOT NULL; brand_name text NOT NULL; format_name text NOT NULL; volume_ml numeric(8,2) NOT NULL |
+| dim_dates | date_key date NOT NULL; year_number integer NOT NULL; month_label text NOT NULL; day_of_week integer NOT NULL; is_weekend boolean NOT NULL |
+| fact_order_items | order_id bigint NOT NULL; product_id bigint NOT NULL; product_key bigint NOT NULL; date_key date NOT NULL; quantity integer NOT NULL; unit_price numeric(12,2) NOT NULL; line_amount numeric(24,2) NOT NULL |
+
+| Таблиця | Обмеження |
+|---|---|
+| dim_products | PRIMARY KEY (product_key) |
+| dim_products | UNIQUE (source_product_id) |
+| dim_products | CHECK (volume_ml > 0) |
+| dim_dates | PRIMARY KEY (date_key) |
+| dim_dates | CHECK (day_of_week BETWEEN 1 AND 7) |
+| fact_order_items | PRIMARY KEY (order_id, product_id) |
+| fact_order_items | FOREIGN KEY (product_key) REFERENCES dim_products(product_key) ON DELETE RESTRICT |
+| fact_order_items | FOREIGN KEY (date_key) REFERENCES dim_dates(date_key) ON DELETE RESTRICT |
+| fact_order_items | CHECK (quantity > 0) |
+| fact_order_items | CHECK (unit_price > 0) |
+| fact_order_items | CHECK (line_amount > 0) |
+| fact_order_items | CHECK (line_amount = quantity * unit_price) |
+
+### Цикл up — down — up
+
+| Етап | Результат перевірки трьох таблиць |
+|---|---|
+| Перший up | 30 рядків опису схеми |
+| Down | 0 рядків, таблиць сховища немає |
+| Повторний up | знову 30 рядків опису схеми |
+
+Після циклу в робочій базі залишилися 10 замовлень,
+12 позицій і загальна вартість позицій 24200.00 грн.
+Усі три таблиці сховища перед завантаженням порожні.
+
+Під час перевірки виникла помилка запуску фрагмента SQL.
+Перевірочний запит повторно виконано цілком;
+аварійну транзакцію завершено командою ROLLBACK.
+Після цього схема та робочі дані перевірені повторно.
 
 ## 7. Завантаження
 
