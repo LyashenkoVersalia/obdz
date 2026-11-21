@@ -650,27 +650,143 @@ ORDER BY orders_count DESC, c.email;
 
 ## 9. Схема на читанні
 
-Файл: [schema-on-read.js](schema-on-read.js)
+Файл: [schema-on-read.js](schema-on-read.js).
+Друга колекція: `dbsa.product_cards` — три демонстраційні картки товарів
+різної повноти опису. Це підмножина каталогу, а не копія всіх десяти
+товарів PostgreSQL. Базові поля: `_id`, `fragrance_name`, `brand_name`.
+Значення взято з початкового наповнення роботи №2; відсутність деяких
+характеристик у картці навмисна й не означає, що товар їх не має.
 
-Три документи різної форми:
+### Три документи різної форми
 
 ```javascript
-// три команди insertOne
+db.product_cards.insertOne({
+  _id: 1,
+  fragrance_name: "Rose Mist",
+  brand_name: "Aroma North"
+})
+
+db.product_cards.insertOne({
+  _id: 4,
+  fragrance_name: "Citrus Dawn",
+  brand_name: "Aroma North",
+  volume_ml: 10
+})
+
+db.product_cards.insertOne({
+  _id: 3,
+  fragrance_name: "Rose Mist",
+  brand_name: "Aroma North",
+  format_name: "пробник",
+  price: NumberDecimal("180.00")
+})
 ```
 
-Що знадобилося б для того самого в PostgreSQL:
+Фактично кожна команда повернула `acknowledged: true` та відповідний
+`insertedId`: 1, 4, 3. Перша картка має лише базові поля, друга — одну
+додаткову характеристику `volume_ml`, третя — дві: `format_name` і `price`.
+Поля, яких у картці немає, не записувалися як null. Після вставок
+`countDocuments()` повернув 3, а `find().sort({ _id: 1 }).toArray()`
+показав усі три форми в одній колекції без попереднього ALTER TABLE.
 
-| Команда `ALTER TABLE` | Новий стовпець | Порожній у скількох рядках із скількох |
-|---|---|---|
-| ... | ... | ... |
+![Три картки різної форми й фактична кількість](screenshots/schema-three-cards.png)
+
+### Умовне табличне подання
+
+Для порівняння розглянуто окрему плоску SQL-таблицю `product_cards`,
+яка спочатку мала б лише `id`, `fragrance_name`, `brand_name`.
+Щоб записати наведені додаткові характеристики в її окремі стовпці,
+знадобилися б такі зміни:
+
+```sql
+ALTER TABLE product_cards ADD COLUMN volume_ml numeric(8, 2);
+ALTER TABLE product_cards ADD COLUMN format_name text;
+ALTER TABLE product_cards ADD COLUMN price numeric(12, 2);
+```
+
+| Умовна команда ALTER TABLE | Новий стовпець | Заповнений у рядках | Порожній у скількох рядках із трьох |
+|---|---|---:|---:|
+| ADD COLUMN volume_ml numeric(8, 2) | volume_ml | 1 | 2 із 3 |
+| ADD COLUMN format_name text | format_name | 1 | 2 із 3 |
+| ADD COLUMN price numeric(12, 2) | price | 1 | 2 із 3 |
+
+| Картка | volume_ml | format_name | price |
+|---|---|---|---|
+| id 1 | NULL | NULL | NULL |
+| id 4 | 10 | NULL | NULL |
+| id 3 | NULL | пробник | 180.00 |
+
+Разом три додаткові стовпці, дев'ять клітинок, із них шість NULL.
+Це підрахунок для цих трьох неповних карток, а не для всього каталогу.
+
+Команди наведено як умовне порівняння і не виконувалися.
+У чинній нормалізованій схемі `products` вже є `volume_ml`, `price`
+та `format_id`, пов'язаний із `product_formats`. Для наявної робочої
+схеми ці три нові стовпці не потрібні; міграцій у роботі №4 не додавали.
 
 ### Ціна: помилка в назві поля
 
-Записаний документ з помилкою: ... Що відповіла база під час запису: ... Що повернув `find` за правильним полем: ...
+Навмисно записано `brand_nam` замість `brand_name`:
 
-Хто і коли виявить таку помилку: ...
+```javascript
+db.product_cards.insertOne({
+  _id: 6,
+  fragrance_name: "Amber Night",
+  brand_nam: "Velvet Lab"
+})
+```
 
-Що зробив би PostgreSQL із цим самим записом: ...
+Фактична відповідь:
+
+```text
+{ acknowledged: true, insertedId: 6 }
+```
+
+Кількість карток зросла з 3 до 4. MongoDB без налаштованого валідатора
+сприйняла `brand_nam` як окреме допустиме поле.
+Пошук за правильною назвою:
+
+```javascript
+db.product_cards.find({ brand_name: "Velvet Lab" }).toArray()
+```
+
+Фактичний результат:
+
+```text
+[]
+```
+
+Водночас `findOne({ _id: 6 })` знайшов документ:
+
+```javascript
+{ _id: 6, fragrance_name: "Amber Night", brand_nam: "Velvet Lab" }
+```
+
+![Помилка прийнята, пошук за правильним полем порожній](screenshots/schema-typo.png)
+
+Помилку виявить застосунок під час читання, перевірка даних або користувач,
+коли не побачить потрібного товару у відборі за брендом. Назви очікуваних
+полів повинні узгоджуватися між записом і читанням; відсутність фіксованого
+набору полів сама по собі не забезпечує правильності даних.
+
+У звичайній SQL-таблиці з оголошеним `brand_name` спроба INSERT у стовпець
+`brand_nam`, якого немає, завершилася б помилкою ще під час виконання.
+Це порівняння з оголошеними стовпцями; довільний JSON у PostgreSQL також
+потребував би перевірок назв полів.
+
+### Очищення досліду
+
+```javascript
+db.product_cards.deleteOne({ _id: 6 })
+db.product_cards.countDocuments()
+db.product_cards.findOne({ _id: 6 })
+db.orders.countDocuments()
+```
+
+Фактично: `deletedCount: 1`, карток після видалення 3, помилковий документ
+не знайдено (`null`), початкових документів замовлень залишилося 10.
+
+![Видалення помилки та перевірка обох колекцій](screenshots/schema-cleanup.png)
 
 ## 10. Кеш показника
 
