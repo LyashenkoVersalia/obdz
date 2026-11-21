@@ -1,0 +1,5 @@
+Перевірка CSV для дашборду.
+modified — час останньої зміни файлу у Windows.
+dashboard-summary.csv; rows=2; total=26940.00; modified=2026-11-21 10:23:12
+dashboard-products.csv; rows=11; total=26940.00; modified=2026-11-21 10:25:53
+dashboard-daily.csv; rows=57; total=26940.00; modified=2026-11-21 10:28:10
