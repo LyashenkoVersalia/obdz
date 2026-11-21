@@ -15,11 +15,14 @@ SELECT
 FROM order_items AS oi;
 
 -- Запит 2.
--- Які покупці оформили в березні замовлення
--- із загальною вартістю позицій понад 3000 грн?
--- Конструкції: WHERE, GROUP BY, HAVING.
--- Рядків: 1.
--- Результат: customer01@example.com, 2 замовлення, 7940.00 грн.
+-- Які покупці за попередній календарний місяць
+-- оформили замовлення із загальною вартістю позицій понад 3000 грн?
+-- Конструкції: JOIN, WHERE, GROUP BY, HAVING,
+-- count DISTINCT, date_trunc, CURRENT_TIMESTAMP, INTERVAL.
+-- Результат залежить від дати запуску та наявних замовлень.
+-- Межі місяця визначаються за київським часом.
+SET TIME ZONE 'Europe/Kyiv';
+
 SELECT
     c.email,
     count(DISTINCT o.id) AS orders_count,
@@ -29,8 +32,10 @@ JOIN orders AS o
     ON o.customer_id = c.id
 JOIN order_items AS oi
     ON oi.order_id = o.id
-WHERE o.ordered_at >= '2026-03-01 00:00:00+02'
-  AND o.ordered_at < '2026-04-01 00:00:00+03'
+WHERE o.ordered_at >=
+      date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month'
+  AND o.ordered_at <
+      date_trunc('month', CURRENT_TIMESTAMP)
 GROUP BY c.id, c.email
 HAVING sum(oi.quantity * oi.unit_price) > 3000
 ORDER BY order_value DESC, c.email;
