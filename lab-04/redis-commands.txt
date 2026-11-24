@@ -1,0 +1,81 @@
+Лабораторна робота №4. Фактичний протокол Redis.
+Джерело: вартість позицій за березень 2026 зі зірки роботи №3, 14250 грн.
+Команди виконувалися вручну у redis-cli всередині контейнера.
+Запуск із кореня репозиторію:
+docker compose -f compose-nosql.yaml exec redis redis-cli
+
+Десять команд початкового прогону — фактичні відповіді без виправлення заднім числом.
+
+1. SET dbsa:dashboard:order_value:2026-03 14250.00
+OK
+
+2. GET dbsa:dashboard:order_value:2026-03
+"14250.00"
+
+3. TTL dbsa:dashboard:order_value:2026-03
+(integer) -1
+
+4. EXPIRE dbsa:dashboard:order_value:2026-03 30
+(integer) 1
+
+5. TTL dbsa:dashboard:order_value:2026-03
+(integer) 24
+
+6. EXISTS dbsa:dashboard:order_value:2026-03
+(integer) 1
+
+7. GET dbsa:dashboard:order_value:2026-03
+"14250.00"
+
+8. TTL dbsa:dashboard:order_value:2026-03
+(integer) 10
+
+9. SET dbsa:dashboard:order_value:2026-03 14250.00 EX 30
+OK
+
+10. INCR dbsa:dashboard:cache_checks:lab04
+(integer) 1
+
+Пояснення першого прогону: команди 7–8 виконано до зникнення ключа.
+Залишалося 10 секунд, тому GET закономірно ще повернув значення.
+Команда 9 знову встановила 30 секунд. Пізніше виконано додаткову перевірку
+відсутності ключа; завершення досліду зафіксовано 24.11.2026.
+
+Додаткова фактична перевірка після очікування:
+GET dbsa:dashboard:order_value:2026-03
+(nil)
+TTL dbsa:dashboard:order_value:2026-03
+(integer) -2
+
+Шаблон «спершу кеш, потім база» — виконано вручну:
+
+1. Промах — попередній GET уже повернув (nil).
+GET dbsa:dashboard:order_value:2026-03
+(nil)
+
+2. Повторне обчислення в PostgreSQL, база dbsa, DBeaver, 24.11.2026:
+SELECT
+    '2026-03' AS report_month,
+    coalesce(sum(f.line_amount), 0) AS order_value
+FROM fact_order_items AS f
+JOIN dim_dates AS d ON d.date_key = f.date_key
+WHERE d.date_key >= DATE '2026-03-01'
+  AND d.date_key < DATE '2026-04-01';
+Результат: report_month = 2026-03; order_value = 14250.
+
+3. Заповнення кеша на 300 секунд:
+SET dbsa:dashboard:order_value:2026-03 14250.00 EX 300
+OK
+
+4. Попадання:
+GET dbsa:dashboard:order_value:2026-03
+"14250.00"
+
+Вихід:
+exit
+
+TTL: додатне число — секунди до зникнення; -1 — ключ без строку; -2 — ключ відсутній.
+GET повертає рядок; для числових обчислень його перетворює застосунок.
+Дослід: 30 секунд. Обраний робочий строк: 300 секунд за припущенням,
+що для перегляду дашборду прийнятне відставання до п'яти хвилин.
+Втрата кеша не видаляє замовлення чи оплати з PostgreSQL.
