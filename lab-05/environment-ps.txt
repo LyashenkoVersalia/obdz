@@ -1,0 +1,4 @@
+Recorded at: 2026-11-24T21:16:14+02:00
+Command: docker compose -f compose-neo4j.yaml ps
+NAME                 IMAGE                     COMMAND                  SERVICE   CREATED          STATUS          PORTS
+dbsa-graph-neo4j-1   neo4j:5.26.30-community   "tini -g -- /startupтАж"   neo4j     10 minutes ago   Up 10 minutes   0.0.0.0:7474->7474/tcp, [::]:7474->7474/tcp, 0.0.0.0:7687->7687/tcp, [::]:7687->7687/tcp

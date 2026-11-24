@@ -1,0 +1,3 @@
+Recorded at: 2026-11-24T21:16:14+02:00
+Docker version 29.8.2, build 7fc2dff
+Docker Compose version v5.6.0
